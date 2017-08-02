@@ -202,7 +202,6 @@ class Vocab(object):
         self.unk_init = 'zeros'
         self.vectors.normal_(0, 1) if self.unk_init == 'random' else self.vectors.zero_()
         for i, token in enumerate(self.itos):
-            token = 'Joshfnasdijf'
             wv_index = wv_dict.get(token, None)
             #word
             if wv_index is not None:
