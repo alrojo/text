@@ -3,21 +3,20 @@ import array
 from collections import defaultdict
 import os
 import zipfile
+from .files import File
 
 import six
 from six.moves.urllib.request import urlretrieve
 import torch
 from tqdm import trange, tqdm
 
-from .utils import reporthook
-
+from .utils import reporthook 
 URL = {
     'glove.42B': 'http://nlp.stanford.edu/data/glove.42B.300d.zip',
     'glove.840B': 'http://nlp.stanford.edu/data/glove.840B.300d.zip',
     'glove.twitter.27B': 'http://nlp.stanford.edu/data/glove.twitter.27B.zip',
     'glove.6B': 'http://nlp.stanford.edu/data/glove.6B.zip'
 }
-
 
 def load_word_vectors(root, wv_type, dim):
     """Load word vectors from a path, trying .pt, .txt, and .zip extensions."""
@@ -72,6 +71,42 @@ def load_word_vectors(root, wv_type, dim):
     torch.save(ret, fname + '.pt')
     return ret
 
+def load_ngrams(root, show_progress=True):
+    url = 'https://www.dropbox.com/s/5w5x45s9c8dzqvh/kazuma1.emb.bz2?dl=1'
+    d_emb = 100
+    size = 95778
+    embeddings = {}
+    fname = File.ensure_file(os.path.join(root, 'kazuma1.emb.bz2'), url=url)
+    with File.open(fname) as f:
+        if show_progress:
+            f = tqdm(f, total=size)
+        for i, line in enumerate(f):
+            line = line.decode().strip()
+            toks = line.split()
+            char = ' '.join(toks[:-d_emb])
+            nums = [float(n) for n in toks[-d_emb:]]
+            embeddings[char] = nums
+    return embeddings, d_emb
+
+def ngrams(sentence, n):
+    return [sentence[i:i+n] for i in range(len(sentence)-n+1)]
+
+def ngram_emb(w, embeddings, d_emb, verbose=False):
+    chars = ['#BEGIN#'] + list(w) + ['#END#']
+    embs = torch.zeros(d_emb)
+    match = {}
+    for i in [2, 3, 4]:
+        grams = ngrams(chars, i)
+        for g in grams:
+            g = '{}gram-{}'.format(i, ''.join(g))
+            if g in embeddings:
+                match[g] = torch.Tensor(embeddings[g])
+    if match:
+        if verbose:
+            print('word {}'.format(w))
+            print(list(match.keys()))
+        embs = sum(match.values()) / len(match)
+    return embs.tolist()
 
 class Vocab(object):
     """Defines a vocabulary object that will be used to numericalize a field.
@@ -120,6 +155,7 @@ class Vocab(object):
 
             if fill_from_vectors:
                 counter.update(wv_dict.keys())
+        ngram_dict, self.ngram_size = load_ngrams(wv_dir)
 
         self.stoi = defaultdict(lambda: 0)
         self.stoi.update({tok: i + 1 for i, tok in enumerate(specials)})
@@ -139,7 +175,7 @@ class Vocab(object):
             self.stoi[k] = len(self.itos) - 1
 
         if wv_type is not None:
-            self.set_vectors(wv_dict, wv_arr)
+            self.set_vectors(wv_dict, wv_arr, ngram_dict)
 
     def __len__(self):
         return len(self.itos)
@@ -161,10 +197,15 @@ class Vocab(object):
         wv_dict, wv_arr, self.wv_size = load_word_vectors(wv_dir, wv_type, wv_dim)
         self.set_vectors(wv_dict, wv_arr)
 
-    def set_vectors(self, wv_dict, wv_arr):
-        self.vectors = torch.Tensor(len(self), self.wv_size)
+    def set_vectors(self, wv_dict, wv_arr, ngram_dict):
+        self.vectors = torch.Tensor(len(self), self.wv_size + self.ngram_size)
+        self.unk_init = 'zeros'
         self.vectors.normal_(0, 1) if self.unk_init == 'random' else self.vectors.zero_()
         for i, token in enumerate(self.itos):
+            token = 'Joshfnasdijf'
             wv_index = wv_dict.get(token, None)
+            #word
             if wv_index is not None:
-                self.vectors[i] = wv_arr[wv_index]
+                self.vectors[i][:self.wv_size] = wv_arr[wv_index]
+            #ngram
+            self.vectors[i][self.wv_size:] = torch.Tensor(ngram_emb(token, ngram_dict, self.ngram_size))
