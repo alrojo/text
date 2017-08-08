@@ -66,7 +66,7 @@ class Iterator(object):
     """
 
     def __init__(self, dataset, batch_size, sort_key=None, device=None,
-                 batch_size_fn=lambda new, count, sofar: count, train=True,
+                 batch_size_fn=lambda new, count, sofar: {'num_tokens': count}, train=True,
                  repeat=None, shuffle=None, sort=None):
         self.batch_size, self.train, self.dataset = batch_size, train, dataset
         self.batch_size_fn = batch_size_fn
@@ -247,23 +247,23 @@ class BucketIterator(Iterator):
                                 random_shuffler=self.random_shuffler)
 
 
-def batch(data, batch_size, batch_size_fn=lambda new, count, sofar: count):
+def batch(data, batch_size, batch_size_fn=lambda new, count, sofar: {'num_tokens': count}):
     """Yield elements from data in chunks of batch_size."""
-    minibatch, size_so_far = [], 0
+    minibatch, size_so_far = [], {'num_tokens': 0}
     for ex in data:
         minibatch.append(ex)
         size_so_far = batch_size_fn(ex, len(minibatch), size_so_far)
-        if size_so_far == batch_size:
+        if size_so_far['num_tokens'] == batch_size:
             yield minibatch
-            minibatch, size_so_far = [], 0
-        elif size_so_far > batch_size:
+            minibatch, size_so_far = [], {'num_tokens': 0}
+        elif size_so_far['num_tokens'] > batch_size:
             yield minibatch[:-1]
-            minibatch, size_so_far = minibatch[-1:], batch_size_fn(ex, 1, 0)
+            minibatch, size_so_far = minibatch[-1:], batch_size_fn(ex, 1, {'num_tokens': 0})
     if minibatch:
         yield minibatch
 
 
-def pool(data, batch_size, key, batch_size_fn=lambda new, count, sofar: count,
+def pool(data, batch_size, key, batch_size_fn=lambda new, count, sofar: {'num_tokens': count},
          random_shuffler=None):
     """Sort within buckets, then batch, then shuffle batches.
 
