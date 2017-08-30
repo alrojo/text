@@ -40,7 +40,9 @@ class Example(object):
     def fromlist(cls, data, fields):
         ex = cls()
         for (name, field), val in zip(fields, data):
-            if field is not None:
+            if field is None:
+                setattr(ex, name, val)
+            else:
                 setattr(ex, name, field.preprocess(val))
         return ex
 

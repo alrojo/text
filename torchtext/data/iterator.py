@@ -1,5 +1,6 @@
 import math
 import random
+import numpy as np
 from contextlib import contextmanager
 from copy import deepcopy
 
@@ -110,7 +111,9 @@ class Iterator(object):
 
     def data(self):
         """Return the examples in the dataset in order, sorted, or shuffled."""
-        if self.sort:
+        if self.sort and self.shuffle:
+            xs = sorted([self.dataset[i] for i in self.random_shuffler(range(len(self.dataset)))], key=self.sort_key)
+        elif self.sort:
             xs = sorted(self.dataset, key=self.sort_key)
         elif self.shuffle:
             xs = [self.dataset[i] for i in self.random_shuffler(range(len(self.dataset)))]
@@ -249,18 +252,26 @@ class BucketIterator(Iterator):
 
 def batch(data, batch_size, batch_size_fn=lambda new, count, sofar: {'num_tokens': count}):
     """Yield elements from data in chunks of batch_size."""
+    batches = []
     minibatch, size_so_far = [], {'num_tokens': 0}
     for ex in data:
         minibatch.append(ex)
         size_so_far = batch_size_fn(ex, len(minibatch), size_so_far)
         if size_so_far['num_tokens'] == batch_size:
-            yield minibatch
+            batches.append(minibatch)
             minibatch, size_so_far = [], {'num_tokens': 0}
         elif size_so_far['num_tokens'] > batch_size:
-            yield minibatch[:-1]
+            batches.append(minibatch[:-1])
             minibatch, size_so_far = minibatch[-1:], batch_size_fn(ex, 1, {'num_tokens': 0})
     if minibatch:
-        yield minibatch
+        batches.append(minibatch)
+    batch_numbers = np.random.permutation(len(batches))
+    for idx in batch_numbers:
+        batch = batches[idx]
+        batch_length = len(batch)
+        if batch_length == 0:
+            continue
+        yield batch
 
 
 def pool(data, batch_size, key, batch_size_fn=lambda new, count, sofar: {'num_tokens': count},
